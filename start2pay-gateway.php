@@ -339,7 +339,10 @@ function start2pay_init_gateway_class() {
                 $order->update_status('pending', 'Order recived');
                 $order->add_order_note( 'Order recived' );
             elseif($_POST['status'] == 'success'):
-                $order->update_status('completed', 'Order Finished');
+                $order->update_status('Completed', 'Order Finished');
+                $order->add_order_note( 'Order paid', true );
+                $order->payment_complete();
+                $order->reduce_order_stock();
                 $order->add_order_note( 'Order paid', true );
             elseif($_POST['status'] == 'fail'):
                 $order->add_order_note( 'Order failed', true );
