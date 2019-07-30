@@ -45,6 +45,7 @@ function start2pay_init_gateway_class() {
             $this->payment_box_text = $this->get_option( 'payment_box_text' );
             $this->enabled = $this->get_option( 'enabled' );
             $this->testmode = 'yes' === $this->get_option( 'testmode' );
+            $this->var_dump = 'yes' === $this->get_option( 'var_dump' );
             $this->username = $this->get_option('username');
             $this->password = $this->get_option('password');
             $this->callback_sign = $this->get_option('cb_salt');
@@ -96,6 +97,14 @@ function start2pay_init_gateway_class() {
                     'type'        => 'checkbox',
                     'description' => 'Place the payment gateway in test mode using test API keys.',
                     'default'     => 'yes',
+                    'desc_tip'    => true,
+                ),
+                'var_dump' => array(
+                    'title'       => 'Var_dump request',
+                    'label'       => 'Var_dump request',
+                    'type'        => 'checkbox',
+                    'description' => 'Var_dump request',
+                    'default'     => 'no',
                     'desc_tip'    => true,
                 ),
                 'username' => array(
@@ -281,11 +290,15 @@ function start2pay_init_gateway_class() {
             curl_setopt($curl, CURLOPT_POSTFIELDS, http_build_query($payContextData));
             $content = curl_exec($curl);
             curl_close($curl);
-            var_dump(json_decode($content)->status);
             $json_data = json_decode($content);
              /**
              * Add content key to order
              */
+
+            if($this->var_dump){
+                var_dump($content);
+                exit;
+            }
 
             $order = wc_get_order( $order_id );
             $order->update_meta_data( 'context', $json_data->context );
@@ -324,20 +337,29 @@ function start2pay_init_gateway_class() {
             $order = new WC_Order($order_id);
             if($_POST['status'] == 'new'):
                 $order->update_status('pending', 'Order recived');
+                $order->add_order_note( 'Order recived' );
             elseif($_POST['status'] == 'success'):
-                $order->update_status('pending', 'Order Finished');
+                $order->update_status('completed', 'Order Finished');
+                $order->add_order_note( 'Order paid', true );
             elseif($_POST['status'] == 'fail'):
-                $order->update_status('pending', 'Payment failed');
+                $order->add_order_note( 'Order failed', true );
+                $order->update_status('failed', 'Payment failed');
             elseif($_POST['status'] == 'process'):
-                $order->update_status('pending', 'Order proccessing');
+                $order->add_order_note( 'Order processing');
+                $order->update_status('processing', 'Order proccessing');
             elseif($_POST['status'] == 'pending'):
+                $order->add_order_note( 'Order pending' );
                 $order->update_status('pending', 'Order pending');
             elseif($_POST['status'] == 'manual'):
-                $order->update_status('pending', 'This order need manual check');
+                $order->add_order_note( 'This order need manual check', true );
+                $order->update_status('On-Hold', 'This order need manual check');
             elseif($_POST['status'] == 'handle'):
+                $order->add_order_note( 'This order must be confermed', true );
                 $order->update_status('pending', 'This payment must be confermed');
+            else:
+                $order->add_order_note( 'Status from start2pay: ' . $_POST['status'], true );
+                $order->update_status('Processing ',  'Status from start2pay: ' . $_POST['status']);
             endif;
-
 
             exit;
         }
@@ -362,20 +384,45 @@ function start2pay_init_gateway_class() {
                 $data = json_decode($result);
                 curl_close($curl);
 
+                if($this->var_dump){
+                    var_dump($result);
+                    exit;
+                }
+
                 /**
                  * Proccess order and finish of order
                  */
                 $order_id = $data->custom->order;
                 if(!empty($order_id)):
                     $order = wc_get_order( $order_id );
-                    if($data->status == 'success'):
-                        $order->update_status( 'completed' );
+                    if($data->status == 'new'):
+                        $order->update_status('Pending', 'Order recived');
+                        $order->add_order_note( 'Order recived' );
+                    elseif($data->status == 'success'):
+                        $order->update_status('Completed', 'Order Finished');
+                        $order->add_order_note( 'Order paid', true );
                         $order->payment_complete();
                         $order->reduce_order_stock();
                         $order->add_order_note( 'Order paid', true );
                         $woocommerce->cart->empty_cart();
+                    elseif($data->status == 'fail'):
+                        $order->add_order_note( 'Order failed', true );
+                        $order->update_status('failed', 'Payment failed');
+                    elseif($data->status == 'process'):
+                        $order->add_order_note( 'Order processing');
+                        $order->update_status('processing', 'Order proccessing');
+                    elseif($data->status == 'pending'):
+                        $order->add_order_note( 'Order pending' );
+                        $order->update_status('pending', 'Order pending');
+                    elseif($data->status == 'manual'):
+                        $order->add_order_note( 'This order need manual check', true );
+                        $order->update_status('On-Hold', 'This order need manual check');
+                    elseif($data->status == 'handle'):
+                        $order->add_order_note( 'This order must be confermed', true );
+                        $order->update_status('pending', 'This payment must be confermed');
                     else:
-                        $order->update_status('pending', 'Payment proccessing');
+                        $order->add_order_note( 'Status from start2pay: ' . $_POST['status'], true );
+                        $order->update_status('Processing ',  'Status from start2pay: ' . $_POST['status']);
                     endif;
                     wp_redirect($this->get_return_url( $order ),302); 
                 else:
