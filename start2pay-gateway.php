@@ -52,11 +52,9 @@ function start2pay_init_gateway_class() {
             $this->key = $this->get_option('key');
             
             add_action( 'woocommerce_update_options_payment_gateways_' . $this->id, array( $this, 'process_admin_options' ) );
-
-            add_action( 'wp_enqueue_scripts', array( $this, 'payment_scripts' ) );
             
             add_action( 'woocommerce_api_'.strtolower(get_class($this)).'_progress', array( &$this, 'check_progress' ) );
-            add_action( 'woocommerce_api_'.strtolower(get_class($this)) . '_status', array( &$this, 'check_callback' ) );
+            add_action( 'woocommerce_api_'.strtolower(get_class($this)) . '_status', array( &$this, 'webhook' ) );
  		}
  
 		/**
@@ -132,9 +130,10 @@ function start2pay_init_gateway_class() {
 		 */
 		public function payment_fields() {
             
-		    // ok, let's display some description before the payment form
+		    /**
+             * Display description to the user on payment
+             */
             if ( $this->description ) {
-                // you can instructions for test mode, I mean test card numbers etc.
                 if ( $this->testmode ) {
                     $this->description  = trim( $this->description );
                 }
@@ -142,57 +141,44 @@ function start2pay_init_gateway_class() {
                 echo wpautop( wp_kses_post( $this->description ) );
             }
         
-            // I will echo() the form, but you can close PHP tags and print it directly in HTML
+            /**
+             * Echo the form
+             */
             echo '<fieldset id="wc-' . esc_attr( $this->id ) . '-cc-form" class="wc-credit-card-form wc-payment-form" style="background:transparent;">';
         
-            // Add this action hook if you want your custom payment gateway to support it
+            /**
+             * Run action for the payment provider
+             */
             do_action( 'woocommerce_credit_card_form_start', $this->id );
         
-            // I recommend to use inique IDs, because other gateways could already use #ccNo, #expdate, #cvc
+            /**
+            * Echo fields
+            */
             echo '<div class="form-row form-row-wide"><span> '. $this->payment_box_text .' </span></div>
                 <div class="clear"></div>';
-        
+            
+            /**
+             * Run closing hook
+             */
             do_action( 'woocommerce_credit_card_form_end', $this->id );
-        
+            
+            /**
+             * Close form wrapper
+             */
             echo '<div class="clear"></div></fieldset>';
  
 		}
- 
-		/*
-		 * Custom CSS and JS
-		 */
-	 	public function payment_scripts() {
- 
-            // we need JavaScript to process a token only on cart/checkout pages, right?
-            if ( ! is_cart() && ! is_checkout() && ! isset( $_GET['pay_for_order'] ) ) {
-                return;
-            }
-        
-            // if our payment gateway is disabled, we do not have to enqueue JS too
-            if ( 'no' === $this->enabled ) {
-                return;
-            }
-            
-            // Load Jquery if it dont exists
-            if ( ! wp_script_is( 'jquery', 'enqueued' )) {
-                //Enqueue
-                wp_enqueue_script( 'jquery' );
-            }
-
-            // custom JS
-            wp_register_script( 'start2pay_woocommerce', plugins_url( 'start2pay.js', __FILE__ ), array( 'jquery'), true );
-        
-            wp_enqueue_script( 'start2pay_woocommerce' );
- 
-	 	}
         
          public function process_payment($order_id){
             global $woocommerce;
+            /**
+             * Get the order so we are able to update data or fetch data about the order
+             */
             $order = wc_get_order( $order_id );
+
             /**
              * Functions
              */
-
             function ksortTree(&$array) {
                 if (!is_array($array)) {
                     return false;
@@ -203,6 +189,7 @@ function start2pay_init_gateway_class() {
                 }
                 return true;
             }
+
             function get_headers_from_curl_response($response) {
                 $headers = [];
                 foreach (explode("\r\n", $response) as $i => $line) {
@@ -241,6 +228,10 @@ function start2pay_init_gateway_class() {
             curl_setopt($curl, CURLOPT_POST, 1);
             $content = curl_exec($curl);
             curl_close($curl);
+            if($this->var_dump){
+                var_dump($content);
+                exit;
+            }
 
             /**
              * Set headers
@@ -253,6 +244,7 @@ function start2pay_init_gateway_class() {
                 $piece = explode('=', $piece);
                 $authPieces[$piece[0]] = trim($piece[1], '"');
             }
+
             /**
              * Create auth keys
              */
@@ -270,13 +262,14 @@ function start2pay_init_gateway_class() {
                     'order' => (string)$order_id,
                 ),
                 'settings' => array(
-                    'progress_url' =>   home_url( '/wc-api/start2pay_gateway_progress' )  ,
+                    'progress_url' =>   home_url( '/wc-api/start2pay_gateway_status' )  ,
                     'success_url' =>  home_url( '/wc-api/start2pay_gateway_status' ) ,
                     'fail_url' =>  home_url( '/wc-api/start2pay_gateway_status' ) ,
                 )
             ];
             ksortTree($payContextData);
             $payContextData['signature'] = hash('sha256', json_encode($payContextData).$key);
+
             /**
              * Send last request to get payment url
              */
@@ -291,10 +284,10 @@ function start2pay_init_gateway_class() {
             $content = curl_exec($curl);
             curl_close($curl);
             $json_data = json_decode($content);
+
              /**
              * Add content key to order
              */
-
             if($this->var_dump){
                 var_dump($content);
                 exit;
@@ -307,7 +300,6 @@ function start2pay_init_gateway_class() {
             /**
              * Send user to payment site if success, else send error
              */
-            
             if($json_data->status == 'success'):
                 return array(
                     'result'   => 'success',
@@ -324,7 +316,7 @@ function start2pay_init_gateway_class() {
 
         public function check_progress() {
              /**
-             * IF request is a verification request
+             * If request is a verification request
              */
             $post = file_get_contents('php://input');
             $data = json_decode($post, true);
@@ -333,44 +325,45 @@ function start2pay_init_gateway_class() {
                 'invoice' => !empty((String)$data['uuid']) ? (String)$data['uuid'] : $_GET['order']
             ));
 
-            $order_id = sanitize_text_field($_POST['custom']['order']);
-            $order = new WC_Order($order_id);
-            if($_POST['status'] == 'new'):
-                $order->update_status('pending', 'Order recived');
-                $order->add_order_note( 'Order recived' );
-            elseif($_POST['status'] == 'success'):
-                $order->update_status('Completed', 'Order Finished');
-                $order->add_order_note( 'Order paid', true );
-                $order->payment_complete();
-                $order->reduce_order_stock();
-                $order->add_order_note( 'Order paid', true );
-            elseif($_POST['status'] == 'fail'):
-                $order->add_order_note( 'Order failed', true );
-                $order->update_status('failed', 'Payment failed');
-            elseif($_POST['status'] == 'process'):
-                $order->add_order_note( 'Order processing');
-                $order->update_status('processing', 'Order proccessing');
-            elseif($_POST['status'] == 'pending'):
-                $order->add_order_note( 'Order pending' );
-                $order->update_status('pending', 'Order pending');
-            elseif($_POST['status'] == 'manual'):
-                $order->add_order_note( 'This order need manual check', true );
-                $order->update_status('On-Hold', 'This order need manual check');
-            elseif($_POST['status'] == 'handle'):
-                $order->add_order_note( 'This order must be confermed', true );
-                $order->update_status('pending', 'This payment must be confermed');
-            else:
-                $order->add_order_note( 'Status from start2pay: ' . $_POST['status'], true );
-                $order->update_status('Processing ',  'Status from start2pay: ' . $_POST['status']);
+            if($_POST):
+                $order_id = sanitize_text_field($_POST['custom']['order']);
+                $order = new WC_Order($order_id);
+                if($_POST['status'] == 'new'):
+                    $order->update_status('pending', 'Order recived');
+                    $order->add_order_note( 'Order recived' );
+                elseif($_POST['status'] == 'success'):
+                    $order->update_status('Completed', 'Order Finished');
+                    $order->add_order_note( 'Order paid', true );
+                    $order->payment_complete();
+                    $order->reduce_order_stock();
+                    $order->add_order_note( 'Order paid', true );
+                elseif($_POST['status'] == 'fail'):
+                    $order->add_order_note( 'Order failed', true );
+                    $order->update_status('failed', 'Payment failed');
+                elseif($_POST['status'] == 'process'):
+                    $order->add_order_note( 'Order processing');
+                    $order->update_status('processing', 'Order proccessing');
+                elseif($_POST['status'] == 'pending'):
+                    $order->add_order_note( 'Order pending' );
+                    $order->update_status('pending', 'Order pending');
+                elseif($_POST['status'] == 'manual'):
+                    $order->add_order_note( 'This order need manual check', true );
+                    $order->update_status('On-Hold', 'This order need manual check');
+                elseif($_POST['status'] == 'handle'):
+                    $order->add_order_note( 'This order must be confermed', true );
+                    $order->update_status('pending', 'This payment must be confermed');
+                else:
+                    $order->add_order_note( 'Status from start2pay: ' . $_POST['status'], true );
+                    $order->update_status('Processing ',  'Status from start2pay: ' . $_POST['status']);
+                endif;
             endif;
 
             exit;
         }
 
-        public function check_callback() {
+        public function webhook($order_id) {
 
-            global $woocommerce;
-
+            global $woocommerce, $order;
             if($_GET['order']):
 
                 $get_order = sanitize_text_field($_GET['order']);
@@ -386,48 +379,46 @@ function start2pay_init_gateway_class() {
                 $result = curl_exec($curl);
                 $data = json_decode($result);
                 curl_close($curl);
-
                 if($this->var_dump){
                     var_dump($result);
                     exit;
                 }
-
-                /**
+                /** 
                  * Proccess order and finish of order
                  */
                 $order_id = $data->custom->order;
                 if(!empty($order_id)):
-                    $order = wc_get_order( $order_id );
-                    if($data->status == 'new'):
+                    $order = wc_get_order($order_id);
+                    if($data->status === 'new'):
                         $order->update_status('Pending', 'Order recived');
                         $order->add_order_note( 'Order recived' );
-                    elseif($data->status == 'success'):
+                    elseif($data->status === 'success'):
                         $order->update_status('Completed', 'Order Finished');
                         $order->add_order_note( 'Order paid', true );
                         $order->payment_complete();
-                        $order->reduce_order_stock();
+                        wc_reduce_stock_levels($order_id);
                         $order->add_order_note( 'Order paid', true );
                         $woocommerce->cart->empty_cart();
-                    elseif($data->status == 'fail'):
+                    elseif($data->status ===  'fail'):
                         $order->add_order_note( 'Order failed', true );
                         $order->update_status('failed', 'Payment failed');
-                    elseif($data->status == 'process'):
+                    elseif($data->status === 'process'):
                         $order->add_order_note( 'Order processing');
                         $order->update_status('processing', 'Order proccessing');
-                    elseif($data->status == 'pending'):
+                    elseif($data->status === 'pending'):
                         $order->add_order_note( 'Order pending' );
                         $order->update_status('pending', 'Order pending');
-                    elseif($data->status == 'manual'):
+                    elseif($data->status ===  'manual'):
                         $order->add_order_note( 'This order need manual check', true );
                         $order->update_status('On-Hold', 'This order need manual check');
-                    elseif($data->status == 'handle'):
+                    elseif($data->status ===  'handle'):
                         $order->add_order_note( 'This order must be confermed', true );
                         $order->update_status('pending', 'This payment must be confermed');
                     else:
                         $order->add_order_note( 'Status from start2pay: ' . $_POST['status'], true );
                         $order->update_status('Processing ',  'Status from start2pay: ' . $_POST['status']);
                     endif;
-                    wp_redirect($this->get_return_url( $order ),302); 
+                     wp_redirect($this->get_return_url( $order ),302); 
                 else:
                     echo '<h1> Payment could not be confermed, please contact support</h1>';
                 endif;
