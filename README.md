@@ -1,4 +1,4 @@
-# Start2pay payment provider for Wordpress.
+# Payments Provider for Start2Pay on WooCommerce
 
 This plugin adds an option to Woocommerce to make you be able to make payments via [Start2Pay](https://start2pay.com/).
 
