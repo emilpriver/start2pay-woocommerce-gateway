@@ -1,6 +1,6 @@
 <?php
 /*
- * Plugin Name: WooCommerce Start 2 pay
+ * Plugin Name: Start2Pay Payments Provider
  * Description: Take payment from start2pay
  * Author: Emil Privér
  * Author URI: https://emilpriver.com
