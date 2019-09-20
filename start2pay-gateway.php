@@ -4,7 +4,7 @@
  * Description: Take payment from start2pay
  * Author: Emil Privér
  * Author URI: https://emilpriver.com
- * Version: 1.0.0
+ * Version: 1.0.1
  *
  * This action hook registers our PHP class as a WooCommerce payment gateway
  */
