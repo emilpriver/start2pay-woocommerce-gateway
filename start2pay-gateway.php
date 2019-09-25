@@ -353,7 +353,7 @@ function start2pay_init_gateway_class() {
                         $order->add_order_note( 'This order must be confermed', true );
                         $order->update_status('pending', 'This payment must be confermed');
                     else:
-                        $order->add_order_note( 'Status from start2pay: ' . $_POST['status'], true );
+                        $order->add_order_note( 'Status from start2pay: ' . sanitize_text_field($_POST['status']), true );
                         $order->update_status('Processing ',  'Status from start2pay: ' . $_POST['status']);
                     endif;
                 endif;
@@ -415,7 +415,7 @@ function start2pay_init_gateway_class() {
                             $order->add_order_note( 'This order must be confermed', true );
                             $order->update_status('pending', 'This payment must be confermed');
                         else:
-                            $order->add_order_note( 'Status from start2pay: ' . $_POST['status'], true );
+                            $order->add_order_note( 'Status from start2pay: ' . sanitize_text_field($_POST['status']), true );
                             $order->update_status('Processing ',  'Status from start2pay: ' . $_POST['status']);
                         endif;
                         wp_redirect($this->get_return_url( $order ),302); 
